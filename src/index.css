@@ -1,0 +1,211 @@
+/* Hide scrollbar everywhere */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #050608;
+}
+
+#root {
+  height: 100%;
+  height: 100dvh;
+}
+
+/* ── AppShell outer wrapper ── */
+.appshell-outer {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  background: #050608;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+/* ── Inner card: full-screen on mobile ── */
+.appshell-inner {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  background: radial-gradient(circle at 50% 0%, #14181f 0%, #0a0c10 55%, #07080a 100%);
+  color: #EDEDED;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  border-radius: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Tablet & desktop: show as centered card ── */
+@media (min-width: 600px) {
+  .appshell-outer {
+    align-items: center;
+    padding: 24px 12px;
+  }
+
+  .appshell-inner {
+    max-width: 420px;
+    height: auto;
+    min-height: 700px;
+    max-height: 90dvh;
+    border-radius: 28px;
+    border: 1px solid #1c2027;
+  }
+}
+
+@media (min-width: 768px) {
+  .appshell-inner {
+    max-width: 480px;
+    font-size: 1.05rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .appshell-inner {
+    max-width: 640px;
+    font-size: 1.2rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .appshell-inner {
+    max-width: 760px;
+    font-size: 1.35rem;
+  }
+}
+
+/* Phone screens legacy class kept for other uses */
+.mrbee-card {
+  font-size: 1rem;
+}
+
+/* Bee gently floats up and down, like hovering */
+@keyframes bee-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.mrbee-float {
+  animation: bee-float 3.2s ease-in-out infinite;
+}
+
+/* Ring spins continuously, like an energy field */
+@keyframes ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.mrbee-ring-spin {
+  animation: ring-spin 6s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mrbee-ring-spin-reverse {
+  animation: ring-spin 9s linear infinite reverse;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Sparks twinkle as they orbit */
+@keyframes spark-twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.mrbee-spark {
+  animation: spark-twinkle 1.4s ease-in-out infinite;
+}
+
+/* Loading spinner used in Vision tab */
+@keyframes mrbee-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Splash screen: bee flies in from off-screen while rotating, settles center */
+@keyframes splash-bee-flyin {
+  0% {
+    transform: translate(-160%, -40%) rotate(-200deg) scale(0.6);
+    opacity: 0;
+  }
+  55% {
+    opacity: 1;
+  }
+  75% {
+    transform: translate(8%, 4%) rotate(18deg) scale(1.05);
+  }
+  100% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+.splash-bee {
+  animation: splash-bee-flyin 1.3s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+/* Splash screen: neon BeeOS text pops in with a glow pulse, after the bee lands */
+@keyframes neon-text-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+    filter: drop-shadow(0 0 0px rgba(242,181,68,0));
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+    filter: drop-shadow(0 0 18px rgba(242,181,68,0.9)) drop-shadow(0 0 36px rgba(242,181,68,0.5));
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(242,181,68,0.6)) drop-shadow(0 0 22px rgba(242,181,68,0.3));
+  }
+}
+
+.neon-text {
+  opacity: 0;
+  animation: neon-text-reveal 0.7s ease-out forwards;
+}
+
+@keyframes neon-flicker {
+  0%, 100% { filter: drop-shadow(0 0 10px rgba(242,181,68,0.6)) drop-shadow(0 0 22px rgba(242,181,68,0.3)); }
+  50% { filter: drop-shadow(0 0 14px rgba(242,181,68,0.8)) drop-shadow(0 0 28px rgba(242,181,68,0.45)); }
+}
+
+.neon-text-idle {
+  animation: neon-flicker 2.4s ease-in-out infinite;
+}
+
+/* Connect Bee screen: expanding pulse rings around the bee while searching */
+@keyframes beeos-connect-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+/* Splash screen: loading progress bar fill */
+@keyframes splash-progress-fill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
