@@ -1,44 +1,16 @@
-import React, { useState, useRef } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Polyline,
-  useMapEvents,
-} from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import React, { useState, useRef, useMemo } from "react";
+import { GoogleMap, useJsApiLoader, Marker, Polyline } from "@react-google-maps/api";
 
-const DEFAULT_CENTER = [16.5062, 80.648]; // Vijayawada, AP — change if you like
-
-// Custom colored circular markers (Leaflet's default marker icon needs
-// bundler-specific asset handling, so we build our own with divIcon instead)
-function makeIcon(label, color) {
-  return L.divIcon({
-    className: "mrbee-waypoint-icon",
-    html: `<div style="
-      width: 28px; height: 28px; border-radius: 50%;
-      background: ${color}; border: 2px solid #0a0c10;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700; color: #0a0c10;
-      font-family: Inter, sans-serif;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    ">${label}</div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-  });
-}
-
-function ClickToAddWaypoint({ onAdd }) {
-  useMapEvents({
-    click(e) {
-      onAdd(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
+const DEFAULT_CENTER = { lat: 16.5062, lng: 80.648 }; // Vijayawada, AP — change if you like
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const MAP_CONTAINER_STYLE = { width: "100%", height: "100%" };
 
 export default function MissionContent() {
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    id: "beeos-google-maps",
+  });
+
   const [tileStyle, setTileStyle] = useState("satellite"); // satellite | streets
   const [waypoints, setWaypoints] = useState([]); // {id, lat, lng}
   const [missionRunning, setMissionRunning] = useState(false);
@@ -63,16 +35,29 @@ export default function MissionContent() {
     setMissionRunning(true);
   };
 
-  const path = waypoints.map((w) => [w.lat, w.lng]);
+  const path = waypoints.map((w) => ({ lat: w.lat, lng: w.lng }));
 
-  const tileUrl =
-    tileStyle === "satellite"
-      ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-  const tileAttribution =
-    tileStyle === "satellite"
-      ? "Tiles &copy; Esri"
-      : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  const onMapClick = (e) => {
+    addWaypoint(e.latLng.lat(), e.latLng.lng());
+  };
+
+  // Custom colored circular markers — built as data-URI SVG icons, same
+  // approach as MapContent.jsx, memoized behind isLoaded since
+  // google.maps.Size only exists once the script has finished loading.
+  const makeIcon = useMemo(() => {
+    if (!isLoaded) return () => undefined;
+    return (label, color) => {
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28'>
+        <circle cx='14' cy='14' r='12' fill='${encodeURIComponent(color)}' stroke='%230a0c10' stroke-width='2'/>
+        <text x='14' y='18' font-size='11' font-weight='700' text-anchor='middle' fill='%230a0c10'>${label}</text>
+      </svg>`;
+      return {
+        url: `data:image/svg+xml;utf8,${svg}`,
+        scaledSize: new window.google.maps.Size(28, 28),
+        anchor: new window.google.maps.Point(14, 14),
+      };
+    };
+  }, [isLoaded]);
 
   return (
     <div style={{ padding: "20px 20px 16px", flex: 1, display: "flex", flexDirection: "column" }}>
@@ -114,35 +99,51 @@ export default function MissionContent() {
           background: "#0d1014",
         }}
       >
-        <MapContainer
-          center={DEFAULT_CENTER}
-          zoom={15}
-          style={{ width: "100%", height: "100%" }}
-          zoomControl={true}
-        >
-          <TileLayer url={tileUrl} attribution={tileAttribution} />
-          <ClickToAddWaypoint onAdd={addWaypoint} />
+        {!isLoaded ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <p style={{ fontSize: "12.5px", color: "#7d8390", margin: 0 }}>Loading map...</p>
+          </div>
+        ) : (
+          <GoogleMap
+            mapContainerStyle={MAP_CONTAINER_STYLE}
+            center={DEFAULT_CENTER}
+            zoom={15}
+            mapTypeId={tileStyle === "satellite" ? "satellite" : "roadmap"}
+            onClick={onMapClick}
+            options={{
+              zoomControl: true,
+              streetViewControl: false,
+              mapTypeControl: false,
+              fullscreenControl: false,
+            }}
+          >
+            {path.length > 1 && (
+              <Polyline
+                path={path}
+                options={{ strokeColor: "#F2B544", strokeWeight: 3, strokeOpacity: 0.9 }}
+              />
+            )}
 
-          {path.length > 1 && (
-            <Polyline positions={path} pathOptions={{ color: "#F2B544", weight: 3, opacity: 0.9, dashArray: "8 6" }} />
-          )}
-
-          {waypoints.map((wp, i) => (
-            <Marker
-              key={wp.id}
-              position={[wp.lat, wp.lng]}
-              icon={makeIcon(i === 0 ? "H" : String(i), i === 0 ? "#3ED598" : "#F2B544")}
-              draggable
-              eventHandlers={{
-                dragend: (e) => {
-                  const { lat, lng } = e.target.getLatLng();
-                  updateWaypointPos(wp.id, lat, lng);
-                },
-                click: () => removeWaypoint(wp.id),
-              }}
-            />
-          ))}
-        </MapContainer>
+            {waypoints.map((wp, i) => (
+              <Marker
+                key={wp.id}
+                position={{ lat: wp.lat, lng: wp.lng }}
+                icon={makeIcon(i === 0 ? "H" : String(i), i === 0 ? "#3ED598" : "#F2B544")}
+                draggable
+                onDragEnd={(e) => updateWaypointPos(wp.id, e.latLng.lat(), e.latLng.lng())}
+                onClick={() => removeWaypoint(wp.id)}
+              />
+            ))}
+          </GoogleMap>
+        )}
 
         <div
           style={{
@@ -154,7 +155,7 @@ export default function MissionContent() {
             background: "rgba(10,12,16,0.7)",
             padding: "4px 8px",
             borderRadius: "6px",
-            zIndex: 1000,
+            zIndex: 10,
             pointerEvents: "none",
           }}
         >

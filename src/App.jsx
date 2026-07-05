@@ -45,7 +45,7 @@ function App() {
   return (
     <AppShell active={tab} onChangeTab={setTab} hideMenuButton={tab === "settings" && settingsSubScreenActive}>
       {tab === "home" && <HomeContent />}
-      {tab === "assistant" && <AssistantContent />}
+      {tab === "assistant" && <AssistantContent language={language} />}
       {tab === "control" && <FlightControlContent />}
       {tab === "vision" && <VisionContent />}
       {tab === "mission" && <MissionContent />}

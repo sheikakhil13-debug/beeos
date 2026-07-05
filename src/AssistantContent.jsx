@@ -14,7 +14,17 @@ the way a companion would. Keep replies brief (1-3 sentences) unless asked for m
 You are multilingual: you understand and speak English, Telugu, and Hindi fluently,
 including natural code-mixing. Always reply in the SAME language the person just used.`;
 
-export default function AssistantContent() {
+// Maps the app's "Conversation language" setting to BCP-47 codes for the
+// Web Speech APIs. Both speech-to-text (recognition) and text-to-speech
+// (synthesis) need this — without it, recognition silently defaults to
+// English and mis-transcribes anything else you say.
+const LANGUAGE_CODES = {
+  English: "en-IN",
+  Telugu: "te-IN",
+  Hindi: "hi-IN",
+};
+
+export default function AssistantContent({ language = "English" }) {
   const [status, setStatus] = useState("idle"); // idle | listening | thinking | speaking
   const [transcript, setTranscript] = useState("");
   const [history, setHistory] = useState([]); // {role: "user"|"bee", text}
@@ -26,6 +36,16 @@ export default function AssistantContent() {
 
   const recognitionRef = useRef(null);
   const geminiHistoryRef = useRef([]); // Gemini "contents" array, kept across turns
+  const languageRef = useRef(language);
+
+  useEffect(() => {
+    languageRef.current = language;
+    // Update the live recognition instance too, in case the person changes
+    // the language mid-session without reloading the Assistant tab.
+    if (recognitionRef.current) {
+      recognitionRef.current.lang = LANGUAGE_CODES[language] || "en-IN";
+    }
+  }, [language]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -35,7 +55,7 @@ export default function AssistantContent() {
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = "en-US"; // browser STT language hint
+    recognition.lang = LANGUAGE_CODES[languageRef.current] || "en-IN"; // browser STT language hint
 
     recognition.onresult = (event) => {
       const text = event.results[0][0].transcript;
@@ -61,6 +81,9 @@ export default function AssistantContent() {
       );
       return;
     }
+    // Re-apply the language right before starting, in case it changed
+    // in Settings since this component mounted.
+    recognitionRef.current.lang = LANGUAGE_CODES[languageRef.current] || "en-IN";
     setStatus("listening");
     setTranscript("");
     recognitionRef.current.start();
@@ -98,11 +121,12 @@ export default function AssistantContent() {
   }
 
   async function askGemini() {
+    const systemInstruction = `${MR_BEE_SYSTEM_PROMPT}\n\nThe person has set their conversation language to ${languageRef.current} in Settings. Reply in ${languageRef.current}, even if their speech-to-text came through imperfectly in another script.`;
     const res = await fetch("/api/gemini", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        systemInstruction: MR_BEE_SYSTEM_PROMPT,
+        systemInstruction,
         contents: geminiHistoryRef.current,
       }),
     });
@@ -114,6 +138,7 @@ export default function AssistantContent() {
   function speak(text) {
     setStatus("speaking");
     const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = LANGUAGE_CODES[languageRef.current] || "en-IN";
     utter.onend = () => setStatus("idle");
     utter.onerror = () => setStatus("idle");
     window.speechSynthesis.speak(utter);

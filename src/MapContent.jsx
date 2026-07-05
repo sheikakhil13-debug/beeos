@@ -1,52 +1,10 @@
-import React, { useState, useRef, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { GoogleMap, useJsApiLoader, Marker, Polyline } from "@react-google-maps/api";
 
-const FALLBACK_CENTER = [16.5062, 80.648]; // Vijayawada, AP — used if geolocation is denied/unavailable
+const FALLBACK_CENTER = { lat: 16.5062, lng: 80.648 }; // Vijayawada, AP — used if geolocation is denied/unavailable
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-function makeBeeIcon() {
-  return L.divIcon({
-    className: "mrbee-live-icon",
-    html: `<div style="
-      width: 30px; height: 30px; border-radius: 50%;
-      background: linear-gradient(180deg, #F8C45B 0%, #E8A322 100%);
-      border: 2px solid #0a0c10;
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 0 6px rgba(242,181,68,0.18), 0 2px 8px rgba(0,0,0,0.4);
-      font-size: 14px;
-    ">🐝</div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-  });
-}
-
-function makeHomeIcon() {
-  return L.divIcon({
-    className: "mrbee-home-icon",
-    html: `<div style="
-      width: 22px; height: 22px; border-radius: 50%;
-      background: #3ED598; border: 2px solid #0a0c10;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    "></div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-  });
-}
-
-// Recenters the map whenever the target position changes meaningfully
-function FollowPosition({ position }) {
-  const map = useMap();
-  const hasCentered = useRef(false);
-  useEffect(() => {
-    if (!position) return;
-    if (!hasCentered.current) {
-      map.setView(position, 17);
-      hasCentered.current = true;
-    }
-  }, [position, map]);
-  return null;
-}
+const MAP_CONTAINER_STYLE = { width: "100%", height: "100%" };
 
 // Generates a small looping offset so the bee appears to fly a patrol route
 // around the home point — purely a visual simulation, not real telemetry.
@@ -63,7 +21,7 @@ function useSimulatedFlightPath(home, enabled) {
       return;
     }
 
-    const [homeLat, homeLng] = home;
+    const { lat: homeLat, lng: homeLng } = home;
     // Rough conversion: small lat/lng deltas to draw a ~60m patrol loop
     const RADIUS_DEG = 0.0006;
 
@@ -72,7 +30,7 @@ function useSimulatedFlightPath(home, enabled) {
       const angle = tRef.current;
       const lat = homeLat + Math.sin(angle) * RADIUS_DEG;
       const lng = homeLng + Math.sin(angle * 2) * RADIUS_DEG * 0.6 + Math.cos(angle) * RADIUS_DEG * 0.3;
-      const point = [lat, lng];
+      const point = { lat, lng };
 
       setCurrent(point);
       setTrail((prev) => {
@@ -90,14 +48,14 @@ function useSimulatedFlightPath(home, enabled) {
   return { trail, current };
 }
 
-function haversineMeters([lat1, lng1], [lat2, lng2]) {
+function haversineMeters(p1, p2) {
   const R = 6371000;
   const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
+  const dLat = toRad(p2.lat - p1.lat);
+  const dLng = toRad(p2.lng - p1.lng);
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    Math.cos(toRad(p1.lat)) * Math.cos(toRad(p2.lat)) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -110,10 +68,17 @@ function trailDistance(trail) {
 }
 
 export default function MapContent() {
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    id: "beeos-google-maps",
+  });
+
   const [locStatus, setLocStatus] = useState("requesting"); // requesting | granted | denied | unsupported
   const [homePos, setHomePos] = useState(null);
   const [flightActive, setFlightActive] = useState(false);
   const [maxAltitude, setMaxAltitude] = useState(0);
+  const mapRef = useRef(null);
+  const hasCenteredRef = useRef(false);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -123,7 +88,7 @@ export default function MapContent() {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setHomePos([pos.coords.latitude, pos.coords.longitude]);
+        setHomePos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setLocStatus("granted");
       },
       () => {
@@ -146,6 +111,55 @@ export default function MapContent() {
   }, [flightActive]);
 
   const distanceTravelled = trailDistance(trail);
+
+  const onMapLoad = useCallback(
+    (map) => {
+      mapRef.current = map;
+      if (homePos && !hasCenteredRef.current) {
+        map.panTo(homePos);
+        map.setZoom(17);
+        hasCenteredRef.current = true;
+      }
+    },
+    [homePos]
+  );
+
+  // Recenter once the very first time homePos resolves after the map is already mounted
+  useEffect(() => {
+    if (mapRef.current && homePos && !hasCenteredRef.current) {
+      mapRef.current.panTo(homePos);
+      mapRef.current.setZoom(17);
+      hasCenteredRef.current = true;
+    }
+  }, [homePos]);
+
+  // Custom bee + home markers — built as data-URI SVG icons so no extra
+  // image assets are needed. google.maps.Size only exists once the script
+  // has loaded, so these are memoized behind isLoaded.
+  const beeIcon = useMemo(() => {
+    if (!isLoaded) return undefined;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'>
+      <circle cx='15' cy='15' r='13' fill='%23F2B544' stroke='%230a0c10' stroke-width='2'/>
+      <text x='15' y='20' font-size='14' text-anchor='middle'>🐝</text>
+    </svg>`;
+    return {
+      url: `data:image/svg+xml;utf8,${svg}`,
+      scaledSize: new window.google.maps.Size(30, 30),
+      anchor: new window.google.maps.Point(15, 15),
+    };
+  }, [isLoaded]);
+
+  const homeIcon = useMemo(() => {
+    if (!isLoaded) return undefined;
+    return {
+      path: window.google.maps.SymbolPath.CIRCLE,
+      scale: 9,
+      fillColor: "#3ED598",
+      fillOpacity: 1,
+      strokeColor: "#0a0c10",
+      strokeWeight: 2,
+    };
+  }, [isLoaded]);
 
   return (
     <div style={{ padding: "20px 20px 16px", flex: 1, display: "flex", flexDirection: "column" }}>
@@ -189,7 +203,7 @@ export default function MapContent() {
           background: "#0d1014",
         }}
       >
-        {!homePos ? (
+        {!homePos || !isLoaded ? (
           <div
             style={{
               position: "absolute",
@@ -202,25 +216,30 @@ export default function MapContent() {
             }}
           >
             <p style={{ fontSize: "12.5px", color: "#7d8390", margin: 0 }}>
-              Getting your location...
+              {!isLoaded ? "Loading map..." : "Getting your location..."}
             </p>
           </div>
         ) : (
-          <MapContainer center={homePos} zoom={17} style={{ width: "100%", height: "100%" }} zoomControl={true}>
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution="Tiles &copy; Esri"
-            />
-            <FollowPosition position={homePos} />
-            <Marker position={homePos} icon={makeHomeIcon()} />
+          <GoogleMap
+            mapContainerStyle={MAP_CONTAINER_STYLE}
+            center={homePos}
+            zoom={17}
+            mapTypeId="satellite"
+            onLoad={onMapLoad}
+            options={{
+              disableDefaultUI: false,
+              zoomControl: true,
+              streetViewControl: false,
+              mapTypeControl: false,
+              fullscreenControl: false,
+            }}
+          >
+            <Marker position={homePos} icon={homeIcon} />
             {trail.length > 1 && (
-              <Polyline
-                positions={trail}
-                pathOptions={{ color: "#F2B544", weight: 3, opacity: 0.85 }}
-              />
+              <Polyline path={trail} options={{ strokeColor: "#F2B544", strokeWeight: 3, strokeOpacity: 0.85 }} />
             )}
-            {current && <Marker position={current} icon={makeBeeIcon()} />}
-          </MapContainer>
+            {current && <Marker position={current} icon={beeIcon} />}
+          </GoogleMap>
         )}
 
         {locStatus === "denied" && (
@@ -235,7 +254,7 @@ export default function MapContent() {
               background: "rgba(10,12,16,0.75)",
               padding: "6px 9px",
               borderRadius: "6px",
-              zIndex: 1000,
+              zIndex: 10,
             }}
           >
             Location permission denied — showing a default location instead.
@@ -259,7 +278,7 @@ export default function MapContent() {
         <StatRow
           icon={<PinIcon />}
           label="Current location"
-          value={current ? `${current[0].toFixed(4)}°, ${current[1].toFixed(4)}°` : homePos ? `${homePos[0].toFixed(4)}°, ${homePos[1].toFixed(4)}°` : "—"}
+          value={current ? `${current.lat.toFixed(4)}°, ${current.lng.toFixed(4)}°` : homePos ? `${homePos.lat.toFixed(4)}°, ${homePos.lng.toFixed(4)}°` : "—"}
         />
         <StatRow
           icon={<RouteIcon />}
